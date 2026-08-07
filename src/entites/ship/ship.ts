@@ -18,17 +18,19 @@ export type Ship = {
   getLength: () => number;
   hit: () => Ship;
   getHits: () => number;
+  getShipId: () => string;
   isSunk: () => boolean;
 };
 
-export function createShip(type: ShipType, hits = 0): Ship {
+export function createShip(shipId: string, type: ShipType, hits = 0): Ship {
   const length = shipLengths[type];
 
   return {
     getType: () => type,
     getLength: () => length,
     getHits: () => hits,
+    getShipId: () => shipId,
     isSunk: () => hits >= length,
-    hit: () => createShip(type, Math.min(hits + 1, length)),
+    hit: () => createShip(shipId, type, Math.min(hits + 1, length)),
   };
 }
