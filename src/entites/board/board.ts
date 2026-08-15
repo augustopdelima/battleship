@@ -9,12 +9,14 @@ type Board = {
 
 type Orientation = "vertical" | "horizontal";
 
+type Coordinates = {
+  col: number;
+  row: number;
+};
+
 type Position = {
   orientation: Orientation;
-  coordinates: {
-    col: number;
-    row: number;
-  };
+  coordinates: Coordinates;
 };
 
 export function createBoard(rows = 10, cols = 10): Board {
@@ -106,4 +108,55 @@ export function placeShip(
   );
 
   return { cells: newCells };
+}
+
+type AttackResult =
+  | {
+    board: Board;
+    type: "hit";
+    shipId: string;
+  }
+  | { board: Board; type: "miss" }
+  | null;
+
+export function receiveAttack(
+  board: Board,
+  coordinates: Coordinates,
+): AttackResult {
+  const { row, col } = coordinates;
+
+  const boardRow = board.cells[row];
+
+  if (!boardRow) return null;
+
+  const cell = boardRow[col];
+
+  if (!cell) return null;
+
+  const newBoardRow = [...boardRow];
+
+  newBoardRow[col] = {
+    ...cell,
+    attacked: true,
+  };
+
+  const newCells = [...board.cells];
+  newCells[row] = newBoardRow;
+
+  const newBoard = {
+    cells: newCells,
+  };
+
+  if (cell.shipId === null) {
+    return {
+      board: newBoard,
+      type: "miss",
+    };
+  }
+
+  return {
+    board: newBoard,
+    type: "hit",
+    shipId: cell.shipId,
+  };
 }
