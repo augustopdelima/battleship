@@ -117,6 +117,7 @@ type AttackResult =
     shipId: string;
   }
   | { board: Board; type: "miss" }
+  | { board: Board; type: "already-attacked" }
   | null;
 
 export function receiveAttack(
@@ -132,6 +133,13 @@ export function receiveAttack(
   const cell = boardRow[col];
 
   if (!cell) return null;
+
+  if (cell.attacked) {
+    return {
+      board: board,
+      type: "already-attacked",
+    };
+  }
 
   const newBoardRow = [...boardRow];
 
