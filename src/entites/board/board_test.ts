@@ -1,5 +1,10 @@
 import { assert, assertEquals } from "@std/assert";
-import { createBoard, getShipPositions, placeShip } from "./board.ts";
+import {
+  createBoard,
+  getShipPositions,
+  placeShip,
+  receiveAttack,
+} from "./board.ts";
 
 Deno.test("Should create a board with rows and cols length equal to 10", () => {
   const board = createBoard();
@@ -173,4 +178,129 @@ Deno.test("should return positions starting from given coordinates", () => {
   });
 
   assertEquals(result, [[4, 5], [4, 6], [4, 7]]);
+});
+
+Deno.test("should return a miss when attacking an empty cell", () => {
+  const board = createBoard();
+  const result = placeShip(4, "A", board, {
+    coordinates: { row: 0, col: 0 },
+    orientation: "horizontal",
+  });
+
+  assert(result !== null);
+
+  const attackMiss = receiveAttack(result, { row: 1, col: 1 });
+
+  assert(attackMiss !== null);
+  assert(attackMiss.type === "miss");
+
+  const cell = attackMiss.board.cells[1][1];
+
+  assert(cell.attacked === true);
+  assert(cell.shipId === null);
+});
+
+Deno.test("should not alter other cells when attacking an empty cell", () => {
+  const board = createBoard();
+  const result = receiveAttack(board, { row: 1, col: 1 });
+
+  assert(result !== null);
+  assert(result.type === "miss");
+
+  for (let row = 0; row < 10; row++) {
+    for (let col = 0; col < 10; col++) {
+      if (row === 1 && col === 1) continue;
+
+      assert(result.board.cells[row][col].attacked === false);
+    }
+  }
+});
+
+Deno.test("should return a hit when attacking a ship", () => {
+  const board = createBoard();
+  const result = placeShip(4, "A", board, {
+    coordinates: { row: 0, col: 0 },
+    orientation: "horizontal",
+  });
+
+  assert(result !== null);
+
+  const attackHit = receiveAttack(result, { row: 0, col: 0 });
+
+  assert(attackHit !== null);
+  assert(attackHit.type === "hit");
+
+  const cell = attackHit.board.cells[0][0];
+
+  assert(cell.attacked === true);
+  assert(cell.shipId !== null);
+});
+
+Deno.test("should return a hit when attacking each ship part", () => {
+  const board = createBoard();
+  let result = placeShip(4, "A", board, {
+    coordinates: { row: 0, col: 0 },
+    orientation: "horizontal",
+  });
+
+  const attacks = [
+    { row: 0, col: 0 },
+    { row: 0, col: 1 },
+    { row: 0, col: 2 },
+    { row: 0, col: 3 },
+  ];
+
+  attacks.forEach(({ row, col }) => {
+    assert(result !== null);
+    const attackHit = receiveAttack(result, { row, col });
+
+    assert(attackHit !== null);
+    assert(attackHit.type === "hit");
+
+    result = attackHit.board;
+
+    const cell = result.cells[row][col];
+
+    assert(cell.attacked === true);
+    assert(cell.shipId === "A");
+  });
+});
+
+Deno.test("should reject an attack on an already attacked position", () => {
+  const board = createBoard();
+  const result = placeShip(4, "A", board, {
+    coordinates: { row: 0, col: 0 },
+    orientation: "horizontal",
+  });
+
+  assert(result !== null);
+
+  const attackHit = receiveAttack(result, { row: 0, col: 0 });
+
+  assert(attackHit !== null);
+
+  const secondAttack = receiveAttack(attackHit.board, { row: 0, col: 0 });
+
+  assert(secondAttack !== null);
+
+  assert(secondAttack.type === "already-attacked");
+
+  assert(secondAttack.board === attackHit.board);
+});
+
+Deno.test("should reject an attack on an invalid position", () => {
+  const board = createBoard();
+
+  const invalidPositions = [
+    { row: -1, col: 0 },
+    { row: 10, col: 0 },
+    { row: 0, col: -1 },
+    { row: 0, col: 10 },
+  ];
+
+  for (const position of invalidPositions) {
+    const result = receiveAttack(board, position);
+
+    assert(result === null);
+  }
 });
