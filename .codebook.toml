@@ -1,0 +1,17 @@
+dictionaries = ["en_us","pt_br"]
+
+words = []
+
+flag_words = []
+
+include_paths = []
+
+ignore_paths = []
+
+ignore_patterns = []
+
+min_word_length = 3
+
+exclude_tags = []
+
+use_global = true
