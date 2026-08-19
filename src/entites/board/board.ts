@@ -29,43 +29,18 @@ export function createBoard(rows = 10, cols = 10): Board {
   };
 }
 
-function getVerticalPositions(
-  shipLength: number,
-  row: number,
-  col: number,
-  accumulator = 0,
-): [number, number][] {
-  if (shipLength === 0) return [];
-
-  return [
-    [row + accumulator, col],
-    ...getVerticalPositions(shipLength - 1, row, col, accumulator + 1),
-  ];
-}
-
-function getHorizontalPositions(
-  shipLength: number,
-  row: number,
-  col: number,
-  accumulator = 0,
-): [number, number][] {
-  if (shipLength === 0) return [];
-  return [
-    [row, col + accumulator],
-    ...getHorizontalPositions(shipLength - 1, row, col, accumulator + 1),
-  ];
-}
-
 export function getShipPositions(shipLength: number, position: Position) {
   const { orientation, coordinates } = position;
 
   const { row, col } = coordinates;
 
-  if (orientation === "vertical") {
-    return getVerticalPositions(shipLength, row, col);
-  }
+  return Array.from({ length: shipLength }, (_, index) => {
+    if (orientation === "vertical") {
+      return [row + index, col];
+    }
 
-  return getHorizontalPositions(shipLength, row, col);
+    return [row, col + index];
+  });
 }
 
 export function placeShip(
