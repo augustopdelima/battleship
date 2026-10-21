@@ -1,4 +1,4 @@
-import { Ship, ShipType } from "../ship/ship.ts";
+import { createShip, type Ship, type ShipType } from "../ship/ship.ts";
 
 type Fleet = Map<string, Ship>;
 
@@ -16,22 +16,39 @@ export function createFleet() {
   return new Map<string, Ship>();
 }
 
-function hasReachedLimited(fleetLimit: ShipLimits) {
-  return (shipType: ShipType, shipsAdded: ShipLimits) => {
-    const amountOfShipsAdded = shipsAdded[shipType];
-    const limit = fleetLimit[shipType];
+function cloneFleet(
+  fleet: Fleet,
+  transformShip: (ship: Ship) => Ship = cloneShip,
+): Fleet {
+  return new Map(
+    [...fleet.entries()].map(([key, ship]) => [
+      key,
+      transformShip(ship),
+    ]),
+  );
+}
 
-    return amountOfShipsAdded >= limit;
+function hasReachedLimit(fleetLimit: ShipLimits) {
+  return (shipType: ShipType, amountOfShips: number) => {
+    return amountOfShips >= fleetLimit[shipType];
   };
 }
 
-const checkLimit = hasReachedLimited(FleetLimit);
+const checkLimit = hasReachedLimit(FleetLimit);
 
 export function getShip(fleet: Fleet, shipId: string): Ship | undefined {
   return fleet.get(shipId);
 }
 
-export function addShip(fleet: Fleet, ship: Ship, shipsAdded: ShipLimits) {
+function cloneShip(ship: Ship): Ship {
+  return createShip(
+    ship.getShipId(),
+    ship.getType(),
+    ship.getHits(),
+  );
+}
+
+export function addShip(fleet: Fleet, ship: Ship) {
   const shipId = ship.getShipId();
 
   if (fleet.has(shipId)) {
@@ -39,39 +56,77 @@ export function addShip(fleet: Fleet, ship: Ship, shipsAdded: ShipLimits) {
       message: "This ship has already been added",
       success: false,
       fleet,
-      shipsAdded,
     };
   }
 
   const shipType = ship.getType();
 
-  if (checkLimit(shipType, shipsAdded)) {
+  const amountOfShips = [...fleet.values()].filter(
+    (currentShip) => currentShip.getType() === shipType,
+  ).length;
+
+  if (checkLimit(shipType, amountOfShips)) {
     return {
       message: "The limit for this ship type has been reached",
       success: false,
       fleet,
-      shipsAdded,
     };
   }
 
-  const newFleet = new Map(
-    [...fleet.entries()].map(([key, value]) => [key, structuredClone(value)]),
-  );
-
+  const newFleet = cloneFleet(fleet);
   newFleet.set(shipId, ship);
-
-  const newAmount = shipsAdded[shipType] + 1;
-  const newShipAdded = { ...shipsAdded, [shipType]: newAmount };
 
   return {
     message: "Ship added successfully",
     success: true,
     fleet: newFleet,
-    shipsAdded: newShipAdded,
   };
 }
 
-export function hitShip() {
+export function hitShip(fleet: Fleet, shipId: string) {
+  const ship = fleet.get(shipId);
+
+  if (fleet.size === 0) {
+    return {
+      fleet,
+      success: false,
+      message: "Cannot hit a ship: the fleet is empty.",
+    };
+  }
+
+  if (!ship) {
+    return {
+      fleet,
+      success: false,
+      message: "Cannot hit a ship: ship not found",
+    };
+  }
+
+  if (ship.isSunk()) {
+    return {
+      fleet,
+      success: false,
+      message: "Cannot hit a ship: the ship has already sunk.",
+    };
+  }
+
+  const newFleet = cloneFleet(
+    fleet,
+    (currentShip) =>
+      currentShip.getShipId() === shipId
+        ? currentShip.hit()
+        : cloneShip(currentShip),
+  );
+
+  return {
+    fleet: newFleet,
+    success: true,
+    message: "Ship hit successfully",
+  };
+}
+
+export function allShipsSunk(fleet: Fleet) {
+  return fleet.size > 0 && [...fleet.values()].every((ship) => ship.isSunk());
 }
 
 /*
