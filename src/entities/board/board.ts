@@ -3,7 +3,7 @@ type Cells = {
   attacked: boolean;
 };
 
-type Board = {
+export type Board = {
   cells: Cells[][];
 };
 
@@ -14,7 +14,7 @@ type Coordinates = {
   row: number;
 };
 
-type Position = {
+export type Position = {
   orientation: Orientation;
   coordinates: Coordinates;
 };
