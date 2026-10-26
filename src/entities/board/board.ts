@@ -9,7 +9,7 @@ export type Board = {
 
 type Orientation = "vertical" | "horizontal";
 
-type Coordinates = {
+export type Coordinates = {
   col: number;
   row: number;
 };
