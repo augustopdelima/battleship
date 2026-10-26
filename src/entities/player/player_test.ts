@@ -1,10 +1,19 @@
-import { assertEquals, assertNotEquals } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertNotEquals,
+  assertStrictEquals,
+  assertThrows,
+} from "@std/assert";
 import { createShip } from "../ship/ship.ts";
-import { createPlayer, placePlayerShip, Player } from "./player.ts";
-import { receiveAttack } from "../board/board.ts";
+import {
+  createPlayer,
+  placePlayerShip,
+  type Player,
+  playerReceiveAttack,
+} from "./player.ts";
+import { createBoard, placeShip, receiveAttack } from "../board/board.ts";
 import { hitShip } from "../fleet/fleet.ts";
-import { assert } from "node:console";
-import { assertStrictEquals } from "@std/assert/strict-equals";
 
 const createEmptyPlayer = () => createPlayer("player-1", "real");
 
@@ -214,4 +223,128 @@ Deno.test("placePlayerShip - the board ship ID can be used to hit the fleet ship
 
   assert(hit.success);
   assertEquals(hit.fleet.get("ship-1")?.getHits(), 1);
+});
+
+Deno.test("playerReceiveAttack - records a miss without touching the fleet", () => {
+  const player = createPlayer("player-1", "real");
+  const placed = placePlayerShip(player, createShip("ship-1", "patrolBoat"), {
+    coordinates: { row: 0, col: 0 },
+    orientation: "vertical",
+  });
+
+  assert(placed.success);
+
+  const result = playerReceiveAttack(placed.player, { row: 5, col: 5 });
+
+  assertEquals(result.outcome.type, "miss");
+  assertEquals(result.player.board.cells[5][5].attacked, true);
+  assertEquals(result.player.fleet.get("ship-1")?.getHits(), 0);
+
+  // Original state is untouched.
+  assertEquals(placed.player.board.cells[5][5].attacked, false);
+  assertNotEquals(result.player, placed.player);
+});
+
+Deno.test("playerReceiveAttack - records a hit on both board and fleet", () => {
+  const player = createPlayer("player-1", "real");
+  const placed = placePlayerShip(player, createShip("ship-1", "patrolBoat"), {
+    coordinates: { row: 0, col: 0 },
+    orientation: "vertical",
+  });
+
+  assert(placed.success);
+
+  const result = playerReceiveAttack(placed.player, { row: 0, col: 0 });
+
+  assert(result.outcome.type === "hit");
+
+  assertEquals(result.outcome.shipId, "ship-1");
+  assertEquals(result.outcome.sunk, false);
+  assertEquals(result.player.board.cells[0][0].attacked, true);
+  assertEquals(result.player.fleet.get("ship-1")?.getHits(), 1);
+
+  // Original state is untouched.
+  assertEquals(placed.player.board.cells[0][0].attacked, false);
+  assertEquals(placed.player.fleet.get("ship-1")?.getHits(), 0);
+});
+
+Deno.test("playerReceiveAttack - reports a sunk ship", () => {
+  const player = createPlayer("player-1", "real");
+  const placed = placePlayerShip(player, createShip("ship-1", "patrolBoat"), {
+    coordinates: { row: 0, col: 0 },
+    orientation: "vertical",
+  });
+
+  assert(placed.success);
+
+  const firstHit = playerReceiveAttack(placed.player, { row: 0, col: 0 });
+
+  assert(firstHit.outcome.type === "hit");
+  assertEquals(firstHit.outcome.sunk, false);
+
+  const secondHit = playerReceiveAttack(firstHit.player, { row: 1, col: 0 });
+
+  assert(secondHit.outcome.type === "hit");
+  assertEquals(secondHit.outcome.sunk, true);
+  assertEquals(secondHit.player.fleet.get("ship-1")?.isSunk(), true);
+});
+
+Deno.test("playerReceiveAttack - rejects an already attacked cell", () => {
+  const player = createPlayer("player-1", "real");
+  const placed = placePlayerShip(player, createShip("ship-1", "patrolBoat"), {
+    coordinates: { row: 0, col: 0 },
+    orientation: "vertical",
+  });
+
+  assert(placed.success);
+
+  const firstHit = playerReceiveAttack(placed.player, { row: 0, col: 0 });
+
+  assert(firstHit.outcome.type === "hit");
+
+  const secondHit = playerReceiveAttack(firstHit.player, { row: 0, col: 0 });
+
+  assertEquals(secondHit.outcome.type, "already-attacked");
+  assertStrictEquals(secondHit.player, firstHit.player);
+  assertEquals(secondHit.player.fleet.get("ship-1")?.getHits(), 1);
+});
+
+Deno.test("playerReceiveAttack - rejects invalid coordinates", () => {
+  const player = createPlayer("player-1", "real");
+
+  const invalidCoordinates = [
+    { row: -1, col: 0 },
+    { row: 10, col: 0 },
+    { row: 0, col: -1 },
+    { row: 0, col: 10 },
+  ];
+
+  for (const coordinates of invalidCoordinates) {
+    const result = playerReceiveAttack(player, coordinates);
+
+    assertEquals(result.outcome.type, "invalid");
+    assertStrictEquals(result.player, player);
+  }
+
+  assertEquals(player.board.cells[0][0].attacked, false);
+});
+
+Deno.test("playerReceiveAttack - throws when board and fleet are out of sync", () => {
+  const board = placeShip(2, "ship-1", createBoard(), {
+    coordinates: { row: 0, col: 0 },
+    orientation: "vertical",
+  });
+
+  assert(board !== null);
+
+  const inconsistentPlayer: Player = {
+    ...createPlayer("player-1", "real"),
+    board,
+    // Fleet is empty even though the board contains a ship.
+  };
+
+  assertThrows(
+    () => playerReceiveAttack(inconsistentPlayer, { row: 0, col: 0 }),
+    Error,
+  );
 });
