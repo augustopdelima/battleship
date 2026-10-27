@@ -6,7 +6,13 @@ import {
   type Position,
   receiveAttack,
 } from "../board/board.ts";
-import { addShip, createFleet, type Fleet, hitShip } from "../fleet/fleet.ts";
+import {
+  addShip,
+  allShipsSunk,
+  createFleet,
+  type Fleet,
+  hitShip,
+} from "../fleet/fleet.ts";
 import { type Ship } from "../ship/ship.ts";
 
 type PlayerType = "real" | "computer";
@@ -119,4 +125,8 @@ export function placePlayerShip(
     },
     message: "Ship placed successfully!",
   };
+}
+
+export function hasLost(player: Player) {
+  return allShipsSunk(player.fleet);
 }
