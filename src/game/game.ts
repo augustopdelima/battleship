@@ -18,3 +18,22 @@ export type GameState = {
   readonly winner: PlayerId | null;
   readonly phase: GamePhase;
 };
+
+export function createGame(p1: Player, p2: Player): GameState {
+  return {
+    p1,
+    p2,
+    phase: GamePhase.PLACEMENT,
+    turn: PlayerId.P1,
+    winner: null,
+  };
+}
+
+export function startGame(state: GameState): GameState {
+  if (state.phase !== GamePhase.PLACEMENT) return state;
+
+  return {
+    ...state,
+    phase: GamePhase.PLAYING,
+  };
+}
