@@ -15,7 +15,7 @@ import {
 } from "../fleet/fleet.ts";
 import { type Ship } from "../ship/ship.ts";
 
-type PlayerType = "real" | "computer";
+export type PlayerType = "real" | "computer";
 
 export type Player = {
   id: string;
@@ -33,6 +33,12 @@ export type AttackOutcome =
 export type PlayerAttackResult = {
   player: Player;
   outcome: AttackOutcome;
+};
+
+export type PlacePlayerShipResult = {
+  success: boolean;
+  player: Player;
+  message: string;
 };
 
 export function createPlayer(id: string, type: PlayerType): Player {
@@ -101,7 +107,7 @@ export function placePlayerShip(
   player: Player,
   ship: Ship,
   position: Position,
-) {
+): PlacePlayerShipResult {
   const fleetResult = addShip(player.fleet, ship);
 
   if (!fleetResult.success) {
