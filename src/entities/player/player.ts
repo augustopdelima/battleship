@@ -24,6 +24,17 @@ export type Player = {
   fleet: Fleet;
 };
 
+export type AttackOutcome =
+  | { type: "hit"; shipId: string; sunk: boolean }
+  | { type: "miss" }
+  | { type: "already-attacked" }
+  | { type: "invalid" };
+
+export type PlayerAttackResult = {
+  player: Player;
+  outcome: AttackOutcome;
+};
+
 export function createPlayer(id: string, type: PlayerType): Player {
   return {
     id,
@@ -36,7 +47,7 @@ export function createPlayer(id: string, type: PlayerType): Player {
 export function playerReceiveAttack(
   player: Player,
   coordinates: Coordinates,
-) {
+): PlayerAttackResult {
   const attack = receiveAttack(player.board, coordinates);
 
   if (attack === null) {
