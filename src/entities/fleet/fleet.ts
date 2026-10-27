@@ -1,6 +1,6 @@
 import { createShip, type Ship, type ShipType } from "../ship/ship.ts";
 
-type Fleet = Map<string, Ship>;
+export type Fleet = Map<string, Ship>;
 
 type ShipLimits = Record<ShipType, number>;
 

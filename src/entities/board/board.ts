@@ -3,18 +3,18 @@ type Cells = {
   attacked: boolean;
 };
 
-type Board = {
+export type Board = {
   cells: Cells[][];
 };
 
 type Orientation = "vertical" | "horizontal";
 
-type Coordinates = {
+export type Coordinates = {
   col: number;
   row: number;
 };
 
-type Position = {
+export type Position = {
   orientation: Orientation;
   coordinates: Coordinates;
 };
