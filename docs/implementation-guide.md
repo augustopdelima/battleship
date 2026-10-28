@@ -1,23 +1,20 @@
 # Battleship Implementation Guide
 
-A step-by-step guide for the remaining Battleship features, written to fit what
-already exists in this repo (Ship, Board, and Fleet) and organized so each
-feature is testable on its own.
+A step-by-step guide for the remaining Battleship features, written to fit what already exists in this repo (Ship, Board, and Fleet) and updated with the decisions made so far.
 
-I'm assuming "Gameboard" means the existing Board module. You do not need to
-rename it unless you want to.
+I'm assuming "Gameboard" means the existing Board module. You do not need to rename it unless you want to.
 
 ## Contents
 
 1. [Before you start](#before-you-start-three-decisions)
-2. [Player factory](#step-1-player-factory)
-3. [Headless Game and turn module](#step-2-headless-game-and-turn-module)
-4. [Render model and board renderer](#step-3-render-model-and-board-renderer)
-5. [DOM controller and event listeners](#step-4-dom-controller-and-event-listeners)
-6. [End-game behaviour](#step-5-end-game-behaviour)
-7. [Predetermined placement](#step-6-predetermined-placement)
-8. [Ship placement system](#step-7-ship-placement-system)
-9. [Full integration and manual checks](#step-8-full-integration-and-manual-checks)
+2. [Step 1: Player module](#step-1-player-module)
+3. [Step 2: Game module & turn tracking](#step-2-game-module--turn-tracking)
+4. [Step 3: Render model and board renderer](#step-3-render-model-and-board-renderer)
+5. [Step 4: DOM controller and event listeners](#step-4-dom-controller-and-event-listeners)
+6. [Step 5: End-game behaviour](#step-5-end-game-behaviour)
+7. [Step 6: Predetermined placement](#step-6-predetermined-placement)
+8. [Step 7: Ship placement system](#step-7-ship-placement-system)
+9. [Step 8: Full integration and manual checks](#step-8-full-integration-and-manual-checks)
 10. [Suggested file layout](#suggested-file-layout)
 11. [Testing order and habits](#testing-order-and-habits)
 
@@ -27,155 +24,147 @@ rename it unless you want to.
 
 ### 1. Decide how state changes
 
-The current Ship, Board, and Fleet are immutable: every action returns a new
-value. Stay consistent with that. Player and Game should also return new state
-instead of mutating objects. It makes tests simple and prevents the UI from
-accidentally sharing state.
+The current Ship, Board, and Fleet are immutable: every action returns a new value. Stay consistent with that. Player and Game should also return new state instead of mutating objects. It makes tests simple and prevents the UI from accidentally sharing state.
 
 ### 2. Separate rules from the DOM
 
 Keep three layers:
 
-- **Domain:** Ship, Board, Fleet, Player, Game. No DOM.
-- **Rendering:** turns state into DOM. No game rules.
-- **Controller:** listens to clicks, calls Game, re-renders. Holds the current
-  game state and the "busy" flag.
+- **Domain/Entities:** `Ship`, `Board`, `Fleet`, `Player`. No DOM, no I/O.
+- **Application/Game:** `Game` and `AI`. Orchestrates turns, win conditions and move selection. No DOM.
+- **Rendering/UI:** turns state into DOM. No game rules.
+- **Controller:** listens to clicks, calls Game/AI, re-renders. Holds current game state and coordinates flow.
 
 If you follow that split, almost every feature can be tested without a browser.
 
 ### 3. Test each step before moving on
 
-For every step below: write the failing test first, implement the minimum, run
-the whole suite, then refactor. Add a test task to `deno.json` if you do not
-have one, and run tests with coverage regularly.
+For every step below: write the failing test first, implement the minimum, run the whole suite, then refactor. Add a test task to `deno.json` if you do not have one, and run tests with coverage regularly.
 
 ---
 
-## Step 1: Player factory
+## Step 1: Player module
 
-**Goal:** A player owns a board, a fleet, and a type: real or computer.
+**Goal:** A `Player` composes its own `Board` and `Fleet` and keeps them consistent during placement and attacks.
 
-### What to build
+### What was done
 
-- A `createPlayer` function or class with:
-  - an ID or name
-  - a type: real or computer
-  - its own Board instance
-  - its own Fleet instance
-- Two ways to create players: `createRealPlayer` and `createComputerPlayer`, or
-  one factory that accepts the type.
-- A way to place a ship on the player's board and add it to the player's fleet
-  as one atomic action.
-- A way for a player to attack another player:
-  - validate the coordinates
-  - call the defender's board attack method
-  - if the result is a hit, call the fleet's hit method using the returned ship
-    ID
-  - return the updated defender plus the result: hit, miss, already attacked, or
-    invalid
-- A way for the computer player to choose an attack:
-  - enumerate all in-bounds cells that have not been attacked
-  - choose one at random
-  - never choose the same cell twice
-  - return "no move available" if the board is exhausted
+- **Factory:** `createPlayer(id: string, type: PlayerType)` where `PlayerType = "real" | "computer"`. Each player gets an independent `createBoard()` and `createFleet()`.
+- **Types:** Export `Player`, `PlayerType`, `Board`, `Fleet`, `Position`, `Coordinates` from their modules to allow composition.
+- **Placement:** `placePlayerShip(player, ship, position): PlacePlayerShipResult` is atomic. Add the ship to the fleet first via `addShip`, then place it on the board via `placeShip` passing the **ship ID** as the `shipSymbol`. Only commit if both succeed. On failure, return the original `player` unchanged.
+- **Attack resolution:** `playerReceiveAttack(player, coordinates): PlayerAttackResult`. Uses `receiveAttack` on the board. If it's a `hit`, calls `hitShip` on the fleet with the returned ship ID. If board and fleet become out of sync, throws an error. 
+- **Helpers:** `hasLost(player)` delegates to `allShipsSunk(player.fleet)`.
+- **Result types:** `AttackOutcome` is a discriminated union (`hit` with `shipId` and `sunk`, `miss`, `already-attacked`, `invalid`). `PlayerAttackResult` returns `{ player, outcome }`. `PlacePlayerShipResult` keeps `{ success, player, message }` for now.
 
-Important design points:
+### Tests
 
-- Do not put turn logic inside Player. Turn order belongs to Game.
-- Do not let Player reach into the fleet's internal map directly. Use Fleet's
-  functions.
-- Placement must be all-or-nothing. Check board placement and fleet limits
-  before committing; otherwise you can end up with a ship on the board that is
-  not in the fleet, or the reverse.
-- Inject the random number generator into the computer's attack chooser. This
-  lets tests be deterministic without sleeping or retrying.
+- Player creation for real and computer types (separate boards/fleets)
+- Atomic placement, immutability on success and failure
+- Rejections: out of bounds, overlap, duplicate ship ID, fleet limit
+- Attack outcomes: hit/miss, sunk detection, already-attacked, invalid coordinates
+- Board and fleet inconsistency throws
+- Fleet/board ID consistency for hits
 
-### Tests for this feature
-
-- Two players created separately do not share a board or a fleet.
-- A real player and a computer player both have a board and a fleet.
-- A player's board starts empty.
-- Attack on an empty cell returns a miss and marks that cell attacked.
-- Attack on a ship cell returns a hit and increments that ship's hit count in the
-  defender's fleet.
-- Attack does not mutate the original defender state.
-- Attack on an already attacked cell returns "already attacked" and changes
-  nothing.
-- Attack outside the board returns invalid or null and changes nothing.
-- Placing a valid ship updates both the board and the fleet.
-- Placing a ship twice, overlapping a ship, or exceeding the fleet limit fails
-  and leaves both board and fleet unchanged.
-- Computer chooses only in-bounds, unattacked cells.
-- With a fixed random generator, the computer's choice is predictable.
-- Repeated computer choices never repeat a cell.
-- When every cell has been attacked, the computer has no legal move.
-- Computer does not mutate the enemy board just by choosing a move.
-
-**Done when:** Player tests pass without any DOM code.
+**Done when:** All player tests pass and the module has no DOM/IO.
 
 ---
 
-## Step 2: Headless Game and turn module
+## Step 2: Game module & turn tracking
 
-**Goal:** A module that owns the game state and steps through turns. This must
-work with no HTML at all.
+**Goal:** A pure, immutable orchestrator that works for both Player vs Computer and Player vs Player. The Game must not know about UI or whether a player is human/computer.
 
-### What to build
+### File layout
 
-- `createGame` with a human player and a computer player.
-- Game state should include:
-  - both players
-  - whose turn it is
-  - game status: placing, playing, or over
-  - winner, if any
-  - the last event: hit, miss, already attacked, invalid, or sunk
-- A `playTurn` function that:
-  - rejects moves when the game is over
-  - rejects moves from the wrong player
-  - rejects moves during the placement phase
-  - applies the human attack
-  - checks whether the computer's fleet is entirely sunk
-  - ends the game or switches to the computer's turn
-  - returns a new game state plus the event
-- A `computerTurn` function that:
-  - asks the computer player for a legal move
-  - applies it through the same `playTurn` path
-  - switches back to the human, unless the game ended
-- A `restart` or `reset` function that creates a fresh game.
+Create `src/game/` with:
+- `game.ts` - Game state, turn logic
+- `game_test.ts`
+- `ai.ts` - Pure computer move selection
+- `ai_test.ts`
 
-Important design points:
+### GameState
 
-- The controller should never call Board or Fleet directly. It should only call
-  Game.
-- The computer's move must go through the same validation as the human's move.
-  Do not create a second attack path.
-- Determine "sunk" after the hit, using the fleet's existing `allShipsSunk`
-  function.
-- Guard the empty-fleet case. `allShipsSunk` returns false for an empty fleet,
-  so make sure the game is not considered started until ships exist.
-- Keep re-rendering out of this module.
+Use enums/identifiers for clarity and `readonly` for immutability:
 
-### Tests for this feature
+```ts
+import { type Player } from "../entities/player/player.ts";
 
-- A new game starts in the placement phase or playing phase, depending on your
-  design.
-- The human moves first.
-- A valid human attack changes the computer's board.
-- A hit updates the computer's fleet.
-- A miss leaves the fleet unchanged.
-- An invalid or already-attacked move does not switch turns.
-- A valid move switches to the computer.
-- The computer only plays after the human.
-- The computer never shoots the same cell twice across many turns.
-- The game ends exactly when every ship in one fleet is sunk.
-- The correct winner is reported.
-- No further turns are accepted after the game ends.
-- The computer does not get a turn after the human wins.
-- Restart produces a completely fresh game with empty boards and full fleets.
-- The original game state is not mutated by any turn.
+export enum PlayerId {
+  P1 = "p1",
+  P2 = "p2",
+}
 
-**Done when:** You can simulate an entire game in tests with no browser and no
-timers.
+export enum GamePhase {
+  PLACEMENT = "placement",
+  PLAYING = "playing",
+  OVER = "over",
+}
+
+export type GameState = {
+  readonly p1: Player;
+  readonly p2: Player;
+  readonly turn: PlayerId;
+  readonly winner: PlayerId | null;
+  readonly phase: GamePhase;
+};
+```
+
+Notes:
+- `p1` and `p2` can both be `real` or `computer`. Do not add a `mode` field.
+- Determine "human vs computer" by checking `state.p1.type` / `state.p2.type` in the controller, not in the Game module.
+
+### AI (separate, pure)
+
+Put in `src/game/ai.ts`:
+
+- `chooseComputerAttack(enemyBoard: Board, random: RandomFn = Math.random): Coordinates | null`
+- Collect all in-bounds cells where `attacked === false`
+- Pick one with the injected `random` function
+- Return `null` if no legal moves exist
+- Must not inspect `shipId` or mutate anything
+
+### Game logic (generic)
+
+In `game.ts`:
+
+- `createGame(p1: Player, p2: Player): GameState` - sets `turn` to `PlayerId.P1`, `phase` to `GamePhase.PLACEMENT`, `winner` to `null`
+- `startGame(state: GameState): GameState` - transitions `PLACEMENT` -> `PLAYING` (only if in placement)
+- `playAttack(state: GameState, coords: Coordinates): GameTurnResult` - **single generic function for both PvP and PvC**
+
+`GameTurnResult` should be a discriminated union, e.g.:
+
+```ts
+export type GameTurnResult =
+  | { type: "continue"; state: GameState; outcome: AttackOutcome }
+  | { type: "game-over"; state: GameState; outcome: AttackOutcome }
+  | { type: "invalid-move"; state: GameState; outcome: AttackOutcome };
+```
+
+Rules for `playAttack`:
+
+1. Guard: if `phase !== "PLAYING"` return `invalid-move`.
+2. Get `attackerId` from `state.turn`, derive `defenderId` as the opponent.
+3. Call `playerReceiveAttack(defender, coords)`.
+4. If `outcome` is `invalid` or `already-attacked`: return `invalid-move` with the possibly updated defender state (board unchanged in practice) but **do not switch `turn`**.
+5. If valid (`hit` or `miss`): let `newDefender` be the updated player. Check `hasLost(newDefender)`. If lost, return `game-over` with `phase: GamePhase.OVER`, `winner: attackerId`. If not lost, update `newDefender` in state and switch `turn` to `defenderId`, return `continue`.
+
+**Important:** The Game module must never check `player.type`. All "human vs computer" decisions belong to the controller.
+
+### Controller decides
+
+In the UI/controller layer:
+
+- Determine `attacker` from `state.turn`. Get `defenderId` and `defenderBoard`.
+- If `attacker.type === "computer"`: call `chooseComputerAttack(defenderBoard, random)`, if `null` handle gracefully, else call `playAttack(state, coords)`. Re-render and if game not over and next is computer, repeat as needed.
+- If `attacker.type === "real"`: wait for a click on the enemy board, decode coordinates, call `playAttack(state, coords)`. Re-render and let the next step run (which may auto-play if next is computer).
+- For PvP (both real), it will always wait for clicks and alternate via `playAttack` alone.
+
+### Tests to write
+
+- **AI:** legal moves only, no repeats by construction, deterministic with seeded random, returns `null` when exhausted, doesn't mutate board.
+- **Game:** PvP turn alternation, PvC flow using computer, invalid/already-attacked do not switch turns, win on sinking last ship, game over prevents further moves, state is immutable.
+- **Integration:** Simulate full game to completion headlessly.
+
+**Done when:** You can run a full PvP or PvC game in tests with no DOM and no timers.
 
 ---
 
@@ -183,264 +172,197 @@ timers.
 
 **Goal:** Display both boards from game state.
 
-Split this into two pieces so most of it is easy to test:
-
-1. A pure "view model" function: given a board and options, return a grid of
-   cell descriptions.
-2. A thin DOM writer: take the view model and create or update DOM elements.
+Split into pure view model + thin DOM writer.
 
 ### What to build
 
-- A view model for each cell with a state such as empty, ship, hit, miss, or
-  hidden.
-- Options for the renderer:
-  - reveal ships, used for the player's own board
-  - hide ships until attacked, used for the enemy board
-  - optionally mark sunk ships
-- A `renderBoard` function that builds a 10 by 10 grid.
-- Each cell should carry data attributes for row and column so clicks can be
-  decoded without guessing.
-- Each cell should be a button or have an accessible label and keyboard
-  support.
-- The renderer should be able to update an existing grid rather than rebuilding
-  the whole page every time.
-- A status area showing whose turn it is, the last result, and the winner.
-- Both boards should be visible at the same time.
+- **View model:** For each cell return state: `empty`, `ship`, `hit`, `miss`, or `hidden`. 
+- **Options:** `revealShips` (player's own board), `hideShips` (enemy board), optionally mark sunk ships.
+- **Renderer:** Build/update a 10x10 grid. Put `data-row` and `data-col` on each cell. Use buttons or accessible elements with keyboard support.
+- **Status area:** Show current turn, last outcome, winner.
+- **Both boards visible:** Player's board and opponent's board at the same time.
 
-Important design points:
+### Rules
 
-- The enemy board must never reveal ship locations in the DOM before they are
-  hit. Do not render a hidden ship with a class that reveals it.
-- The renderer receives state; it does not decide whether an attack is legal.
-- Use CSS classes rather than inline styles so tests can assert on class names.
-- Keep the cell coordinates in data attributes; do not infer them from DOM
-  order.
+- Enemy board must **never** reveal un-attacked ship cells.
+- Renderer receives state, does not decide legality.
+- Use CSS classes, not inline styles.
+- Re-render by updating existing elements, avoid duplicating listeners (use event delegation).
+- Keep coordinates in data attributes.
 
-### Tests for this feature
+### Tests
 
-- The renderer creates 10 rows and 10 columns.
-- Every cell has the correct row and column attributes.
-- The player's own board shows ship cells.
-- The enemy board hides un-attacked ship cells.
-- A hit cell renders as hit on both boards.
-- A miss cell renders as miss.
-- A cell that has not been attacked does not render as hit or miss.
-- Changing the board state and re-rendering updates the correct cells.
-- Re-rendering does not duplicate cells or event listeners.
-- Sunk ships are marked if you implement that feature.
-- The status area shows the current turn.
-- The status area shows the winner when the game is over.
+- Grid structure (10x10), correct data attributes
+- Own board shows ships, enemy hides them
+- Hit/miss render correctly
+- Re-render updates cells without duplicates
+- Status shows turn and winner
+- Prefer testing the pure view model first
 
-For DOM tests, either use a lightweight DOM library with Deno or test the pure
-view model first and keep a very small DOM test for element structure. Do not
-let DOM setup dominate the test suite.
-
-**Done when:** You can render an arbitrary game state and assert on the
-resulting cell states.
+**Done when:** Can render arbitrary `GameState` and assert on cell states.
 
 ---
 
 ## Step 4: DOM controller and event listeners
 
-**Goal:** Turn clicks into game actions and keep the screen in sync.
+**Goal:** Wire clicks to game actions and keep UI in sync.
 
 ### What to build
 
-- A controller module that owns:
-  - the current game state
-  - a busy flag for the computer's turn
-  - references to the two board containers and the status element
-  - an injected scheduler for the computer's delay, so tests do not wait on real
-    time
-- Event delegation on the enemy board container. Decode the row and column from
-  the clicked cell.
-- On a human click:
-  - ignore the click if the game is over
-  - ignore it if it is not the human's turn
-  - ignore it if the computer is currently playing
-  - call the game module
-  - re-render both boards and the status
-  - if the game is not over, mark busy, schedule the computer turn, then
-    re-render and clear busy
-- A restart button wired to the game's reset function.
-- No rule logic in the controller. It should only coordinate.
+- Controller owns current `GameState`, `busy` flag, board containers, status element
+- Inject scheduler/delay for computer turns (use a function like `(fn) => fn()` in tests)
+- Event delegation on enemy board container
+- On human click:
+  - Ignore if game over, not player's turn, or computer is busy
+  - Decode coords from clicked cell
+  - Call `playAttack`
+  - Re-render boards + status
+  - If not over and next player is computer, schedule/run computer turn via AI + `playAttack`, re-render again
+- Restart button resets to fresh game
 
-Important design points:
+### Rules
 
-- The controller must not compute hits, sinks, or winners.
-- The computer move should happen after the human move is rendered, otherwise
-  the user never sees their result.
-- Use one injected delay function rather than calling `setTimeout` directly all
-  over the module. Tests can replace it with an immediate function.
-- Prevent double clicks during the computer's turn. This is a real bug in many
-  implementations.
-- Use event delegation rather than attaching 100 listeners on every render.
+- Controller coordinates only, no rule logic (no hit/sink/win calculations)
+- Use the same `playAttack` for both human and computer moves
+- Prevent double-clicks during computer's turn
+- Only allow attacks on opponent board for real players
+- Use event delegation, not 100 listeners per render
 
-### Tests for this feature
+### Tests
 
-- Clicking an enemy cell calls the game with the correct coordinates.
-- Clicking a cell on the player's own board does nothing.
-- Clicking during the computer's turn does nothing.
-- Double-clicking quickly does not produce two human attacks.
-- A human hit updates the enemy board and the status.
-- A human miss updates the enemy board and the status.
-- An already-attacked cell shows a message and does not consume the turn.
-- After a human move, the computer move is scheduled exactly once.
-- After the computer move, control returns to the human.
-- When the human wins, no computer move is scheduled.
-- When the computer wins, the enemy board and controls are disabled.
-- Restart resets both boards, the status, the turn, and the winner.
-- The controller never calls Board, Fleet, or Player attack functions directly.
+- Clicking calls `playAttack` with correct coords
+- Clicking own board does nothing
+- Invalid/already-attacked don't consume turn
+- Computer move scheduled after human move
+- Computer doesn't move after human wins
+- Double-click protection
+- Restart resets state/UI
+- Controller never calls Board/Fleet/Player attack functions directly
 
-**Done when:** You can simulate clicks in a test DOM and play a full game with a
-fake scheduler.
+**Done when:** Can simulate clicks in a test DOM with a fake scheduler and play full games.
 
 ---
 
 ## Step 5: End-game behaviour
 
-**Goal:** Make the ending clear and prevent further play.
+**Goal:** Clear end state and prevent further play.
 
 ### What to build
 
-- A winner message: "You win" or "Computer wins".
-- Disable or ignore all attack clicks after the game ends.
-- Reveal the computer's remaining ships at the end if you want that behaviour.
-- Keep the restart button active.
-- Optionally show a summary: hits, misses, sunk ships.
+- Winner message ("You win" / "Computer wins")
+- Disable or ignore all attack clicks after `phase === "over"`
+- Optionally reveal computer's remaining ships at end
+- Keep restart button active
+- Optionally show summary (hits/misses/sunk)
 
-### Tests for this feature
+### Tests
 
-- The game ends the moment the last ship is sunk.
-- Further clicks do nothing.
-- The correct winner text is displayed.
-- The computer's board is revealed only after the game ends, if you implement
-  that.
-- Restart clears the winner text and re-enables play.
-- The game does not end when only some ships are sunk.
-- The game does not end after a miss.
+- Game ends at the moment last ship sinks
+- Further clicks ignored
+- Correct winner displayed
+- Restart clears winner and re-enables play
+- Game doesn't end on miss/partial sinks
 
-**Done when:** A full game can be played to completion and restarted.
+**Done when:** Can play to completion and restart cleanly.
 
 ---
 
 ## Step 6: Predetermined placement
 
-**Goal:** Set up both fleets before real placement UI exists.
-
-This matches the assignment: first use fixed coordinates, then add placement
-later.
+**Goal:** Set up both fleets with fixed coordinates before implementing free placement.
 
 ### What to build
 
-- A placement list for the human and the computer: ship type, ID, start
-  coordinate, orientation.
-- A setup function that loops through the list and calls the player's atomic
-  `placeShip` function.
-- A hard failure if any placement is invalid, so bugs do not silently produce
-  incomplete fleets.
-- Both fleets must be populated before the game enters the playing phase.
+- Placement lists for human and computer (ship type/id/start/orientation)
+- Setup function that calls `placePlayerShip` for each
+- Fail loudly on invalid placement
+- Both fleets populated before moving to `PLAYING`
+- Game should not start with empty/incomplete fleets
 
-### Tests for this feature
+### Tests
 
-- Every configured ship exists in the fleet.
-- Every configured ship occupies the correct cells on the board.
-- No two ships overlap.
-- No ship is out of bounds.
-- Fleet limits are respected.
-- Setup fails loudly on an invalid placement.
-- The game cannot start with an empty fleet.
-- The human and computer boards are independent.
-- Setup is deterministic across runs.
+- All ships placed, correct positions, no overlaps, in bounds
+- Fleet limits respected
+- Invalid placement fails loudly
+- Deterministic setup
+- Human and computer boards independent
 
-**Done when:** The game starts in a known, valid state every time.
+**Done when:** Game starts in a known valid state.
 
 ---
 
 ## Step 7: Ship placement system
 
-**Goal:** Let the human place ships instead of using fixed coordinates.
-
-Choose one approach, or both:
-
-- **Manual:** select a ship, choose horizontal or vertical, click a starting
-  cell.
-- **Random:** a button that places all remaining ships randomly.
+**Goal:** Let the human place ships manually or randomly.
 
 ### What to build
 
-- A placement phase in the game state.
-- A current selected ship and orientation in the UI state. This is UI state, not
-  game rules.
-- A preview of the cells the ship would occupy, with valid and invalid styling.
-- Placement validation through the player's existing atomic placement function.
-- Undo or reset placement if you want it.
-- A random placement helper that:
-  - tries random coordinates and orientations
-  - checks validity before committing
-  - retries a bounded number of times
-  - fails clearly if it cannot place everything
-- A "Start game" action that is enabled only when all required ships are placed.
+- Placement phase in `GameState` (already have `PLACEMENT`)
+- UI state: selected ship, orientation (UI only, not game rules)
+- Preview of ship cells with valid/invalid styling
+- Use `placePlayerShip` for validation/placement
+- Random placement helper: try random coords/orientations, validate, bounded retries, use injected random for tests
+- "Start game" enabled only when all required ships placed
+- Switching to `PLAYING` transitions phase
 
-### Tests for this feature
+### Tests
 
-- Selecting a ship and clicking a valid cell places it on the board and in the
-  fleet.
-- Placement updates the preview and the board rendering.
-- Placing out of bounds is rejected and leaves state unchanged.
-- Placing over another ship is rejected.
-- A ship cannot be placed twice.
-- Exceeding the fleet limit is rejected.
-- Changing orientation changes the preview direction.
-- Invalid placements show invalid styling.
-- The start button is disabled until all ships are placed.
-- Manual placement and random placement both produce a legal fleet.
-- Random placement never overlaps ships or leaves the board.
-- Random placement uses the injected random generator, so tests are
-  deterministic.
-- Starting the game switches the phase from placing to playing.
-- Attacks are rejected during the placement phase.
-- Undo or reset restores the previous state correctly, if implemented.
+- Manual placement places on board and fleet
+- Preview updates correctly
+- Invalid placements rejected, state unchanged
+- Can't place twice/exceed limits
+- Random placement legal and deterministic with injected random
+- Start button gating
+- Attacks rejected during placement
+- Undo/reset if implemented
 
-**Done when:** A player can place a full fleet manually or randomly, and the
-game only starts when placement is complete.
+**Done when:** Can place full fleet manually or randomly and only start when complete.
 
 ---
 
 ## Step 8: Full integration and manual checks
 
-**Goal:** Prove the pieces work together.
+**Goal:** Prove everything works together.
 
-Write one or two end-to-end tests in the game/controller layer:
+### Automated
 
-- Set up both fleets.
-- Simulate human and computer turns until one fleet is sunk.
-- Assert that the winner is correct.
-- Assert that no move was repeated.
-- Assert that the game rejects input after the end.
+- End-to-end test: place fleets, simulate turns until sunk, assert winner, no repeats, no moves after end
 
-Then do a manual pass:
+### Manual
 
-- Both boards are visible.
-- The enemy ships are hidden before being hit.
-- Hits and misses are visually distinct.
-- The status updates after every move.
-- The computer does not shoot the same cell twice.
-- The computer's turn cannot be interrupted by clicking.
-- The game ends at the right moment.
-- Restart works repeatedly.
-- Keyboard and screen-reader labels work for the grid cells.
+- Both boards visible, enemy ships hidden before hit
+- Hits/misses visually distinct
+- Status updates each move
+- Computer doesn't repeat shots
+- Computer turn not interruptible by clicks
+- Ends at right moment
+- Restart works
+- Basic keyboard/screen reader labels for grid
 
 ---
 
 ## Suggested file layout
 
-- `src/entities/player/player.ts` and `player_test.ts`
-- `src/game/game.ts` and `game_test.ts`
-- `src/ui/render.ts` and `render_test.ts`
-- `src/ui/controller.ts` and `controller_test.ts`
-- `src/ui/placement.ts` and `placement_test.ts`, if placement gets large
-- `main.ts` only bootstraps the controller
+```
+src/
+├── entities/
+│   ├── board/        (board.ts, board_test.ts)
+│   ├── fleet/        (fleet.ts, fleet_test.ts)
+│   ├── player/       (player.ts, player_test.ts)
+│   └── ship/         (ship.ts, ship_test.ts)
+├── game/
+│   ├── game.ts       # GameState, createGame, startGame, playAttack
+│   ├── game_test.ts
+│   ├── ai.ts         # chooseComputerAttack (pure, injected random)
+│   └── ai_test.ts
+├── ui/
+│   ├── render.ts
+│   ├── render_test.ts
+│   ├── controller.ts
+│   ├── controller_test.ts
+│   └── placement.ts  # if placement logic grows
+└── main.ts           # bootstrap only
+```
 
 ---
 
@@ -448,19 +370,18 @@ Then do a manual pass:
 
 Follow this loop for each step:
 
-1. Write one failing test for the smallest behaviour.
-2. Implement only enough to pass.
-3. Run the whole suite, not just the new file.
-4. Refactor while green.
-5. Check coverage for the new module.
-6. Commit the feature and its tests together, matching your existing
-   PR-per-feature workflow.
+1. Write one failing test for the smallest behaviour
+2. Implement only enough to pass
+3. Run the whole suite, not just the new file
+4. Refactor while green
+5. Check coverage for the new module
+6. Commit feature + tests together
 
-Keep the domain tests free of DOM and timers. Use injected randomness and
-injected scheduling in the controller. That is what makes the computer and the
-UI testable without flaky sleeps or brittle DOM assumptions.
-
-The single most important rule running through all of this: the controller
-coordinates, the renderer displays, and Game/Player/Board/Fleet decide the
-rules. If a test needs to know a game rule, it should live in the domain layer,
-not in a DOM test.
+**Rules to keep:**
+- Domain/tests free of DOM and real timers
+- Inject randomness (`RandomFn`) and schedulers
+- Player/Game orchestrate via their own APIs (don't reach into internals)
+- Game is generic: no "player vs computer" branching inside Game, only in controller
+- Controller coordinates, renderer displays, Game/Player/Board/Fleet decide rules
+- Keep everything immutable
+- AI is pure and only looks at the enemy board
